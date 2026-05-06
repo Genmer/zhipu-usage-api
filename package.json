@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
