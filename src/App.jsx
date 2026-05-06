@@ -4,7 +4,6 @@ import { listen } from '@tauri-apps/api/event'
 import LoginScreen from './components/LoginScreen'
 import UsageCard from './components/UsageCard'
 import SettingsDialog from './components/SettingsDialog'
-import NoSubscription from './components/NoSubscription'
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -14,7 +13,6 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSuccess, setIsSuccess] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [noSubscription, setNoSubscription] = useState(false)
   const [cardSwitchSeconds, setCardSwitchSeconds] = useState(30)
   const [usageData, setUsageData] = useState([
     { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false },
@@ -33,32 +31,25 @@ function App() {
     invoke('get_login_status').then(status => {
       if (status) {
         setIsLoggedIn(true)
-        invoke('get_usage_data').then(data => { 
+        invoke('get_usage_data').then(data => {
           setUsageData(normalize(data))
         }).catch(() => {})
       }
     }).catch(() => {})
     listen('login-successful', () => {
       setIsLoggedIn(true)
-      setNoSubscription(false)
-      invoke('get_usage_data').then(data => { 
+      invoke('get_usage_data').then(data => {
         setUsageData(normalize(data))
       })
     })
     listen('usage-data-updated', (e) => {
-      setNoSubscription(false)
       setUsageData(normalize(e.payload))
       setIsRefreshing(false)
       setIsSuccess(true)
       setTimeout(() => setIsSuccess(false), 1500)
     })
-    listen('no-subscription', () => {
-      setNoSubscription(true)
-      setIsRefreshing(false)
-    })
     listen('logged-out', () => {
       setIsLoggedIn(false)
-      setNoSubscription(false)
       setUsageData([
         { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false },
         { title: "每周额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false }
@@ -67,6 +58,10 @@ function App() {
     listen('card-switch-interval-changed', (e) => {
       setCardSwitchSeconds(e.payload)
     })
+    listen('api-error', (e) => {
+      setIsRefreshing(false)
+      console.error('API Error:', e.payload)
+    })
   }, [])
 
   const normalize = (data) => [
@@ -74,7 +69,6 @@ function App() {
     { title: "每周额度", percentage: data.weekly.percentage, resetTime: data.weekly.resetTime, isHighUsage: parseInt(data.weekly.percentage) > 80 }
   ]
 
-  const handleLogin = useCallback(() => invoke('open_login_window'), [])
   const handleLogout = useCallback(() => {
     invoke('logout')
   }, [])
@@ -112,18 +106,12 @@ function App() {
   return (
     <div className="no-select" style={{ background: 'transparent' }} onMouseDown={handleDragStart}>
       {isLoggedIn ? (
-        noSubscription ? (
-          <NoSubscription isPinned={isPinned} onTogglePin={handleTogglePin}
-            isRefreshing={isRefreshing} isSuccess={isSuccess} onRefresh={handleRefresh}
-            onLogout={handleLogout} />
-        ) : (
-          <UsageCard {...usageData[currentCard]} onNext={nextCard} onPrev={prevCard}
-            isPinned={isPinned} onTogglePin={handleTogglePin}
-            isRefreshing={isRefreshing} isSuccess={isSuccess} onRefresh={handleRefresh}
-            onOpenSettings={() => setShowSettings(true)} onLogout={handleLogout} />
-        )
+        <UsageCard {...usageData[currentCard]} onNext={nextCard} onPrev={prevCard}
+          isPinned={isPinned} onTogglePin={handleTogglePin}
+          isRefreshing={isRefreshing} isSuccess={isSuccess} onRefresh={handleRefresh}
+          onOpenSettings={() => setShowSettings(true)} onLogout={handleLogout} />
       ) : (
-        <LoginScreen onLogin={handleLogin} />
+        <LoginScreen />
       )}
       <SettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
     </div>

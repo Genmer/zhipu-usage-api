@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Listener, Manager, WebviewUrl, WebviewWindowBuilder, Window};
+use tauri::{AppHandle, Emitter, Manager, Window};
 use chrono::{Local, Timelike, Datelike};
 use std::fs;
 use std::path::PathBuf;
@@ -9,12 +9,13 @@ use std::path::PathBuf;
 struct SavedAccount {
     id: String,
     label: String,
+    api_key: String,
     last_used: String,
 }
 
 fn accounts_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".zhipu-monitor").join("accounts.json")
+    home.join(".zhipu-monitor").join("api-keys.json")
 }
 
 fn load_accounts() -> Vec<SavedAccount> {
@@ -35,6 +36,13 @@ fn save_accounts(accounts: &[SavedAccount]) {
     let _ = fs::write(accounts_path(), serde_json::to_string_pretty(accounts).unwrap_or_default());
 }
 
+fn mask_key(key: &str) -> String {
+    if key.len() <= 8 {
+        return key.to_string();
+    }
+    format!("{}****{}", &key[..4], &key[key.len() - 4..])
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UsageData {
     hourly: QuotaInfo,
@@ -51,10 +59,11 @@ struct QuotaInfo {
 
 struct AppState {
     is_logged_in: Mutex<bool>,
+    current_api_key: Mutex<Option<String>>,
     usage_data: Mutex<Option<UsageData>>,
-    data_window_exists: Mutex<bool>,
     refresh_interval_secs: Mutex<u64>,
     card_switch_secs: Mutex<u64>,
+    http_client: reqwest::blocking::Client,
 }
 
 fn calc_reset_times() -> (String, String) {
@@ -96,355 +105,180 @@ fn calc_reset_times() -> (String, String) {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct ScrapeResult {
-    data: Option<UsageData>,
-    debug: Vec<String>,
-    #[serde(rename = "noSubscription")]
-    no_subscription: bool,
-    #[serde(rename = "userLabel")]
-    user_label: Option<String>,
+struct ApiLimit {
+    #[serde(rename = "type")]
+    limit_type: String,
+    unit: Option<u64>,
+    number: Option<u64>,
+    usage: Option<f64>,
+    #[serde(rename = "currentValue")]
+    current_value: Option<f64>,
+    percentage: Option<f64>,
+    #[serde(rename = "nextResetTime")]
+    next_reset_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct LinkResult {
-    text: Option<String>,
-    href: Option<String>,
+struct ApiData {
+    limits: Option<Vec<ApiLimit>>,
 }
 
-const SHOW_EXTRACT_OVERLAY_JS: &str = r#"
-(function() {
-  if (document.getElementById('__tauri_extract_overlay__')) return;
-  var overlay = document.createElement('div');
-  overlay.id = '__tauri_extract_overlay__';
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:999999;pointer-events:none;';
-  var box = document.createElement('div');
-  box.style.cssText = 'background:rgba(30,30,30,0.95);border-radius:12px;padding:16px 24px;display:flex;align-items:center;gap:10px;';
-  var spinner = document.createElement('div');
-  spinner.style.cssText = 'width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#3b82f6;border-radius:50%;animation:__tauri_spin__ 0.8s linear infinite;';
-  var text = document.createElement('span');
-  text.style.cssText = 'color:#fff;font-size:13px;font-family:system-ui,sans-serif;';
-  text.textContent = '提取用户ID用作记住登录状态使用...';
-  var style = document.createElement('style');
-  style.textContent = '@keyframes __tauri_spin__{to{transform:rotate(360deg)}}';
-  document.head.appendChild(style);
-  box.appendChild(spinner);
-  box.appendChild(text);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-})()
-"#;
-
-const EXTRACT_USER_JS: &str = r#"
-(function() {
-  var maxAttempts = 5;
-  var attempt = 0;
-
-  function submitLabel(label) {
-    if (window.__TAURI__ && window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('submit_user_info', { label: label });
-    } else {
-      document.title = '__USER__' + label;
-    }
-  }
-
-  function doExtract() {
-    var allText = document.body.innerText || '';
-    var accountIdMatch = allText.match(/账号\s*ID\s*[：:]\s*(\d+)/);
-    var phoneMatch = allText.match(/(?:手机|电话)\s*[号码]?\s*[：:]\s*(1[3-9]\d{9})/);
-    if (!phoneMatch) phoneMatch = allText.match(/(1[3-9]\d{9})/);
-    var nicknameMatch = allText.match(/(?:昵称|用户名|名称)\s*[：:]\s*([^\n\s]{1,20})/);
-    var label = accountIdMatch ? 'ID:' + accountIdMatch[1] :
-                phoneMatch ? phoneMatch[1] :
-                nicknameMatch ? nicknameMatch[1] : '';
-    submitLabel(label);
-  }
-
-  function tryExtract() {
-    attempt++;
-    var selectors = [
-      '[class*="avatar"]',
-      '[class*="Avatar"]',
-      '[class*="user-icon"]',
-      '[class*="UserIcon"]',
-      '[class*="header"] img',
-      '[class*="Header"] img',
-      '[class*="header"] [class*="icon"]',
-      '[class*="Header"] [class*="Icon"]',
-      'nav img',
-      'header img',
-      '[class*="navbar"] img',
-      '[class*="NavBar"] img'
-    ];
-
-    var userIcon = null;
-    for (var s = 0; s < selectors.length; s++) {
-      userIcon = document.querySelector(selectors[s]);
-      if (userIcon) break;
-    }
-
-    if (!userIcon) {
-      var allImgs = document.querySelectorAll('img');
-      for (var i = 0; i < allImgs.length; i++) {
-        if (allImgs[i].width < 50 && allImgs[i].width > 10) { userIcon = allImgs[i]; break; }
-      }
-    }
-
-    if (!userIcon) {
-      var allSvgs = document.querySelectorAll('svg');
-      for (var i = 0; i < allSvgs.length; i++) {
-        var parent = allSvgs[i].parentElement;
-        if (parent) {
-          var cls = parent.getAttribute('class') || '';
-          if (cls.indexOf('header') !== -1 || cls.indexOf('Header') !== -1 || cls.indexOf('nav') !== -1 || cls.indexOf('Nav') !== -1) {
-            userIcon = parent;
-            break;
-          }
-        }
-      }
-    }
-
-    if (userIcon) {
-      userIcon.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-      userIcon.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      userIcon.click();
-      setTimeout(doExtract, 1500);
-    } else if (attempt < maxAttempts) {
-      setTimeout(tryExtract, 800);
-    } else {
-      doExtract();
-    }
-  }
-
-  tryExtract();
-})()
-"#;
-
-const SCRAPE_JS: &str = r#"
-(function() {
-  var result = { data: null, debug: [], noSubscription: false, userLabel: null };
-  try {
-    var allText = document.body.innerText || '';
-    result.debug.push('innerText length: ' + allText.length);
-    result.debug.push('innerText preview: ' + allText.substring(0, 200));
-
-    if (allText.indexOf('尚未订阅') !== -1 || allText.indexOf('未订阅') !== -1 || allText.indexOf('没有订阅') !== -1 || allText.indexOf('暂无套餐') !== -1) {
-      result.debug.push('detected: no subscription');
-      result.noSubscription = true;
-    }
-
-    var p5match = allText.match(/每[\s]*5[\s]*小[\s]*时[\s\S]*?(\d+)\s*%/);
-    var weekmatch = allText.match(/每[\s]*周[\s\S]*?(\d+)\s*%/);
-
-    var p5reset = allText.match(/每[\s]*5[\s]*小[\s]*时[\s\S]*?(?:重置时间|距重置|重置|恢复时间|剩余时间|距恢复)[：:\s]*([^\n]+)/);
-    if (!p5reset) p5reset = allText.match(/每[\s]*5[\s]*小[\s]*时[\s\S]*?(\d+[\s:]*\d+(?::\d+)?[^\n]*(?:重置|恢复|剩余)[^\n]*)/);
-    if (!p5reset) {
-      var p5section = allText.match(/每[\s]*5[\s]*小[\s]*时[\s\S]{0,300}/);
-      if (p5section) {
-        var timeM = p5section[0].match(/(\d{1,2}[:\.]\d{2}(?::\d{2})?|\d+小时?\d*分?|\d+天\d+小时?|\d+h\s*\d*m)/);
-        if (timeM) p5reset = timeM;
-      }
-    }
-
-    var weekReset = allText.match(/每[\s]*周[\s\S]*?(?:重置时间|距重置|重置|恢复时间|剩余时间|距恢复)[：:\s]*([^\n]+)/);
-    if (!weekReset) weekReset = allText.match(/每[\s]*周[\s\S]*?(\d{4}[-.]\d{1,2}[-.]\d{1,2}[^\n]*(?:重置|恢复|剩余)[^\n]*)/);
-    if (!weekReset) {
-      var weekSection = allText.match(/每[\s]*周[\s\S]{0,300}/);
-      if (weekSection) {
-        var timeM2 = weekSection[0].match(/(\d{1,2}[:\.]\d{2}(?::\d{2})?|\d+小时?\d*分?|\d+天\d+小时?|\d+h\s*\d*m)/);
-        if (timeM2) weekReset = timeM2;
-      }
-    }
-
-    result.debug.push('p5match: ' + (p5match ? p5match[1] : 'null'));
-    result.debug.push('weekmatch: ' + (weekmatch ? weekmatch[1] : 'null'));
-
-    try {
-      var allEls = document.querySelectorAll('*');
-      for (var i = 0; i < allEls.length; i++) {
-        var el = allEls[i];
-        if (el.offsetWidth > 0 && el.offsetWidth < 60 && el.offsetHeight > 0 && el.offsetHeight < 60) {
-          var cls = (el.getAttribute('class') || '').toLowerCase();
-          var parentCls = (el.parentElement ? el.parentElement.getAttribute('class') || '' : '').toLowerCase();
-          if (cls.indexOf('avatar') !== -1 || cls.indexOf('user') !== -1 || parentCls.indexOf('avatar') !== -1 || parentCls.indexOf('user') !== -1) {
-            el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-            el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-            el.click();
-            break;
-          }
-        }
-      }
-    } catch(e) { result.debug.push('hover error: ' + e.message); }
-
-    if (p5match || weekmatch) {
-      result.data = {
-        hourly: {
-          percentage: p5match ? p5match[1] + '%' : '0%',
-          resetTime: p5reset ? p5reset[1].trim() : '未知'
-        },
-        weekly: {
-          percentage: weekmatch ? weekmatch[1] + '%' : '0%',
-          resetTime: weekReset ? weekReset[1].trim() : '未知'
-        },
-        timestamp: new Date().toISOString()
-      };
-    }
-
-    setTimeout(function() {
-      try {
-        var newText = document.body.innerText || '';
-        var idMatch = newText.match(/账号\s*ID\s*[：:]\s*(\d+)/);
-        if (idMatch) {
-          result.userLabel = 'ID:' + idMatch[1];
-        } else {
-          var phoneMatch = newText.match(/(1[3-9]\d{9})/);
-          if (phoneMatch) result.userLabel = phoneMatch[1];
-        }
-      } catch(e) {}
-
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        result.debug.push('using __TAURI__.core.invoke');
-        window.__TAURI__.core.invoke('submit_scrape_result', { result: result });
-      } else if (window.__TAURI__ && window.__TAURI__.event) {
-        result.debug.push('using __TAURI__.event.emit');
-        window.__TAURI__.event.emit('scrape-result', result);
-      } else {
-        result.debug.push('ERROR: __TAURI__ not available, using title fallback');
-        document.title = '__SCRAPE__' + JSON.stringify(result);
-      }
-    }, 1500);
-  } catch(e) {
-    result.debug.push('JS ERROR: ' + e.message);
-    document.title = '__SCRAPE__' + JSON.stringify(result);
-  }
-})()
-"#;
-
-const SCRAPE_WITH_LINK_JS: &str = r#"
-(function() {
-  try {
-    var links = document.querySelectorAll('a[href]');
-    var found = null;
-    for (var i = 0; i < links.length; i++) {
-      var href = links[i].getAttribute('href') || '';
-      var text = (links[i].textContent || '').trim();
-      if (text.indexOf('Coding') !== -1 || text.indexOf('coding') !== -1
-        || href.indexOf('coding') !== -1 || href.indexOf('plan') !== -1) {
-        found = { text: text, href: href };
-        break;
-      }
-    }
-    if (window.__TAURI__ && window.__TAURI__.core) {
-      window.__TAURI__.core.invoke('submit_link_result', { result: found });
-    } else if (window.__TAURI__ && window.__TAURI__.event) {
-      window.__TAURI__.event.emit('scrape-link-result', found);
-    } else {
-      document.title = '__LINK__' + JSON.stringify(found);
-    }
-  } catch(e) {
-    document.title = '__LINK__' + JSON.stringify(null);
-  }
-})()
-"#;
-
-fn process_scrape_result(app: &AppHandle, scrape: ScrapeResult) {
-    for line in &scrape.debug {
-        log::info!("[DATA-DOM] {}", line);
-    }
-
-    if let Some(ref label) = scrape.user_label {
-        if !label.is_empty() {
-            log::info!("[DATA] extracted user label from data window: {}", label);
-            let account = SavedAccount {
-                id: format!("acc_{}", Local::now().format("%Y%m%d%H%M%S")),
-                label: label.clone(),
-                last_used: Local::now().format("%Y-%m-%d %H:%M").to_string(),
-            };
-            let mut accounts = load_accounts();
-            accounts.retain(|a| a.label != account.label);
-            accounts.insert(0, account);
-            if accounts.len() > 5 {
-                accounts.truncate(5);
-            }
-            save_accounts(&accounts);
-        }
-    }
-
-    if scrape.no_subscription {
-        log::info!("[DATA] account has no Coding Plan subscription");
-        let _ = app.emit("no-subscription", ());
-        close_and_reset_data_window(app);
-        return;
-    }
-
-    if let Some(mut data) = scrape.data {
-        save_and_emit_usage(app, &mut data);
-        close_and_reset_data_window(app);
-    } else {
-        log::info!("[DATA] no usage data found, trying to find Coding Plan link...");
-        if let Some(win) = app.get_webview_window("data-scraper") {
-            let _ = win.eval(SCRAPE_WITH_LINK_JS);
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ApiResponse {
+    code: Option<u64>,
+    msg: Option<String>,
+    success: Option<bool>,
+    data: Option<ApiData>,
 }
 
-fn process_link_result(app: &AppHandle, link: Option<LinkResult>) {
-    if let Some(l) = link {
-        let href = l.href.unwrap_or_default();
-        let full_url = if href.starts_with("http") {
-            href
-        } else {
-            format!("https://open.bigmodel.cn{}", href)
-        };
-        log::info!("[DATA] navigating to: {}", full_url);
-        if let Ok(url) = full_url.parse() {
-            if let Some(win) = app.get_webview_window("data-scraper") {
-                let app2 = app.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(8));
-                    log::info!("[DATA] re-scraping after navigation...");
-                    if let Some(w) = app2.get_webview_window("data-scraper") {
-                        let _ = w.eval(SCRAPE_JS);
-                    }
-                });
-                let _ = win.navigate(url);
-            }
-        } else {
-            close_and_reset_data_window(app);
-        }
-    } else {
-        log::info!("[DATA] no Coding Plan link found");
-        close_and_reset_data_window(app);
+fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Result<UsageData, String> {
+    let response = client
+        .get("https://bigmodel.cn/api/monitor/usage/quota/limit")
+        .header("Authorization", api_key)
+        .header("Content-Type", "application/json")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .map_err(|e| format!("请求失败: {}", e))?;
+
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("API Key 无效或已过期".to_string());
     }
-}
-
-fn close_and_reset_data_window(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("data-scraper") {
-        let _ = win.close();
+    if !status.is_success() {
+        return Err(format!("请求失败，状态码: {}", status));
     }
-    *app.state::<AppState>().data_window_exists.lock().unwrap() = false;
-}
 
-#[tauri::command]
-fn submit_scrape_result(app: AppHandle, result: ScrapeResult) {
-    log::info!("[DATA] received scrape result via invoke");
-    process_scrape_result(&app, result);
-}
+    let api_resp: ApiResponse = response
+        .json()
+        .map_err(|e| format!("解析响应失败: {}", e))?;
 
-#[tauri::command]
-fn submit_link_result(app: AppHandle, result: Option<LinkResult>) {
-    log::info!("[DATA] received link result via invoke: {:?}", result);
-    process_link_result(&app, result);
-}
+    if api_resp.code.unwrap_or(0) != 200 {
+        return Err(api_resp.msg.unwrap_or_else(|| "未知错误".to_string()));
+    }
 
-fn save_and_emit_usage(app: &AppHandle, data: &mut UsageData) {
+    let limits = api_resp
+        .data
+        .and_then(|d| d.limits)
+        .unwrap_or_default();
+
+    for (i, limit) in limits.iter().enumerate() {
+        log::info!(
+            "[API] limit[{}] type={} unit={:?} number={:?} percentage={:?} usage={:?} currentValue={:?} nextResetTime={:?}",
+            i, limit.limit_type, limit.unit, limit.number, limit.percentage, limit.usage, limit.current_value, limit.next_reset_time
+        );
+    }
+
     let (fallback_hourly, fallback_weekly) = calc_reset_times();
-    if data.hourly.reset_time == "未知" {
-        data.hourly.reset_time = format!("约 {}", fallback_hourly);
-    }
-    if data.weekly.reset_time == "未知" {
-        data.weekly.reset_time = fallback_weekly;
+
+    fn calc_pct(limit: &ApiLimit) -> f64 {
+        if let Some(pct) = limit.percentage {
+            if pct > 0.0 {
+                return pct;
+            }
+        }
+        match (limit.current_value, limit.usage) {
+            (Some(cv), Some(u)) if u > 0.0 => (cv / u) * 100.0,
+            _ => 0.0,
+        }
     }
 
+    fn fmt_reset_time(reset_ts: Option<u64>, fallback: &str) -> String {
+        match reset_ts {
+            Some(ts) => {
+                let secs = ts / 1000;
+                let dt = chrono::DateTime::from_timestamp(secs as i64, 0)
+                    .map(|utc| utc.with_timezone(&Local));
+                match dt {
+                    Some(dt) => {
+                        let now = Local::now();
+                        let diff = dt.signed_duration_since(now);
+                        if diff.num_seconds() > 0 {
+                            let h = diff.num_hours();
+                            let m = (diff.num_seconds() % 3600) / 60;
+                            if h > 0 {
+                                format!("{}小时{}分", h, m)
+                            } else {
+                                format!("{}分", m)
+                            }
+                        } else {
+                            "即将重置".to_string()
+                        }
+                    }
+                    None => format!("约 {}", fallback),
+                }
+            }
+            None => format!("约 {}", fallback),
+        }
+    }
+
+    let tokens_limits: Vec<&ApiLimit> = limits
+        .iter()
+        .filter(|l| l.limit_type == "TOKENS_LIMIT")
+        .collect();
+
+    let now_ts = Local::now().timestamp_millis() as u64;
+    let future_tokens: Vec<&&ApiLimit> = tokens_limits
+        .iter()
+        .filter(|l| l.next_reset_time.map_or(false, |t| t > now_ts))
+        .collect();
+
+    let hourly_limit = if future_tokens.len() > 1 {
+        future_tokens
+            .iter()
+            .min_by_key(|l| l.next_reset_time.unwrap_or(u64::MAX))
+            .copied()
+            .or_else(|| tokens_limits.first())
+            .copied()
+    } else {
+        tokens_limits.first().copied()
+    };
+
+    let hourly_percentage = match hourly_limit {
+        Some(l) => format!("{}%", calc_pct(l).round() as u64),
+        None => "0%".to_string(),
+    };
+    let hourly_reset = match hourly_limit {
+        Some(l) => fmt_reset_time(l.next_reset_time, &fallback_hourly),
+        None => format!("约 {}", fallback_hourly),
+    };
+
+    let weekly_limit = if future_tokens.len() > 1 {
+        future_tokens
+            .iter()
+            .max_by_key(|l| l.next_reset_time.unwrap_or(0))
+            .copied()
+            .copied()
+    } else {
+        None
+    };
+    let weekly_percentage = match weekly_limit {
+        Some(l) => format!("{}%", calc_pct(l).round() as u64),
+        None => "0%".to_string(),
+    };
+    let weekly_reset = match weekly_limit {
+        Some(l) => fmt_reset_time(l.next_reset_time, &fallback_weekly),
+        None => fallback_weekly.clone(),
+    };
+
+    log::info!(
+        "[API] result: hourly_pct={} hourly_reset={} weekly_pct={} weekly_reset={}",
+        hourly_percentage, hourly_reset, weekly_percentage, weekly_reset
+    );
+
+    Ok(UsageData {
+        hourly: QuotaInfo {
+            percentage: hourly_percentage,
+            reset_time: hourly_reset,
+        },
+        weekly: QuotaInfo {
+            percentage: weekly_percentage,
+            reset_time: weekly_reset,
+        },
+        timestamp: Local::now().to_rfc3339(),
+    })
+}
+
+fn save_and_emit_usage(app: &AppHandle, data: &UsageData) {
     log::info!(
         "[DATA] hourly={} reset={} weekly={} reset={}",
         data.hourly.percentage,
@@ -458,125 +292,31 @@ fn save_and_emit_usage(app: &AppHandle, data: &mut UsageData) {
     let _ = app.emit("usage-data-updated", cloned);
 }
 
-fn create_data_window(app: &AppHandle) {
-    let exists = *app.state::<AppState>().data_window_exists.lock().unwrap();
-    if exists {
-        log::info!("[DATA] data window already exists, skipping");
-        return;
-    }
-    *app.state::<AppState>().data_window_exists.lock().unwrap() = true;
-
-    let data_label = "data-scraper";
-
-    log::info!("[DATA] creating data window...");
-    let win = match WebviewWindowBuilder::new(
-        app,
-        data_label,
-        WebviewUrl::External(
-            "https://open.bigmodel.cn/coding-plan/personal/overview"
-                .parse()
-                .unwrap(),
-        ),
-    )
-    .inner_size(1200.0, 800.0)
-    .visible(false)
-    .build()
-    {
-        Ok(w) => w,
-        Err(e) => {
-            log::error!("[DATA] failed to create data window: {}", e);
-            *app.state::<AppState>().data_window_exists.lock().unwrap() = false;
-            return;
-        }
+fn fetch_and_emit_usage(app: &AppHandle) {
+    let api_key = {
+        let state = app.state::<AppState>();
+        let key = state.current_api_key.lock().unwrap().clone();
+        drop(state);
+        key
     };
-    log::info!("[DATA] data window created, waiting for page load...");
 
-    let _title_handler = win.on_window_event(move |event| {
-        match event {
-            tauri::WindowEvent::Destroyed => {
-                log::info!("[DATA] data window destroyed");
-            }
-            tauri::WindowEvent::Focused(_) => {}
-            _ => {}
-        }
-    });
-
-    let app_clone = app.clone();
-
-    app_clone.clone().listen("scrape-result", move |event| {
-        log::info!("[DATA] scrape-result event received");
-        let app_inner = app_clone.clone();
-        let payload = event.payload().to_string();
-        let scrape: ScrapeResult = match serde_json::from_str(&payload) {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("[DATA] parse scrape result failed: {}", e);
-                return;
-            }
-        };
-        process_scrape_result(&app_inner, scrape);
-    });
-
-    let app_clone2 = app.clone();
-    app_clone2.clone().listen("scrape-link-result", move |event| {
-        log::info!("[DATA] scrape-link-result event received");
-        let app_inner = app_clone2.clone();
-        let payload = event.payload().to_string();
-        let link: Option<LinkResult> = serde_json::from_str(&payload).ok();
-        process_link_result(&app_inner, link);
-    });
-
-    let app_for_timer = app.clone();
-    std::thread::spawn(move || {
-        log::info!("[DATA] timer thread started, waiting 6 seconds...");
-        std::thread::sleep(std::time::Duration::from_secs(6));
-        log::info!("[DATA] injecting scrape JS...");
-        if let Some(w) = app_for_timer.get_webview_window("data-scraper") {
-            match w.eval(SCRAPE_JS) {
-                Ok(_) => log::info!("[DATA] scrape JS injected successfully"),
-                Err(e) => log::error!("[DATA] scrape JS injection failed: {}", e),
-            }
-        } else {
-            log::error!("[DATA] data-scraper window not found for eval");
-            return;
-        }
-
-        log::info!("[DATA] polling title for fallback...");
-        for i in 0..30 {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            if let Some(w) = app_for_timer.get_webview_window("data-scraper") {
-                match w.title() {
-                    Ok(title) => {
-                        if title.starts_with("__SCRAPE__") {
-                            log::info!("[DATA] got result via title fallback (attempt {})", i);
-                            let json_str = &title["__SCRAPE__".len()..];
-                            if let Ok(scrape) = serde_json::from_str::<ScrapeResult>(json_str) {
-                                process_scrape_result(&app_for_timer, scrape);
-                            } else {
-                                log::error!("[DATA] failed to parse title scrape result");
-                                close_and_reset_data_window(&app_for_timer);
-                            }
-                            return;
-                        } else if title.starts_with("__LINK__") {
-                            log::info!("[DATA] got link result via title fallback (attempt {})", i);
-                            let json_str = &title["__LINK__".len()..];
-                            let link: Option<LinkResult> = serde_json::from_str(json_str).ok();
-                            process_link_result(&app_for_timer, link);
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("[DATA] failed to get window title: {}", e);
-                        break;
-                    }
+    match api_key {
+        Some(key) => {
+            let client = &app.state::<AppState>().http_client;
+            match fetch_usage_from_api(&key, client) {
+                Ok(data) => {
+                    save_and_emit_usage(app, &data);
                 }
-            } else {
-                log::info!("[DATA] data window gone, stopping poll");
-                return;
+                Err(e) => {
+                    log::error!("[DATA] 获取额度数据失败: {}", e);
+                    let _ = app.emit("api-error", e);
+                }
             }
         }
-        log::warn!("[DATA] title poll timed out, no data received");
-    });
+        None => {
+            log::warn!("[DATA] 未设置API Key");
+        }
+    }
 }
 
 #[tauri::command]
@@ -605,81 +345,79 @@ fn get_usage_data(state: tauri::State<AppState>) -> UsageData {
 }
 
 #[tauri::command]
-async fn open_login_window(app: AppHandle) -> Result<bool, String> {
-    let login_label = "login";
-
-    if let Some(existing) = app.get_webview_window(login_label) {
-        let _ = existing.set_focus();
-        return Ok(true);
+async fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
+    let key = api_key.trim().to_string();
+    if key.is_empty() {
+        return Err("API Key 不能为空".to_string());
     }
 
-    let login_win = WebviewWindowBuilder::new(
-        &app,
-        login_label,
-        WebviewUrl::External("https://open.bigmodel.cn/login".parse().unwrap()),
-    )
-    .title("智谱AI - 登录")
-    .inner_size(900.0, 700.0)
-    .resizable(true)
-    .build()
-    .map_err(|e| format!("failed to create login window: {}", e))?;
+    let client = app.state::<AppState>().http_client.clone();
+    let usage_data = fetch_usage_from_api(&key, &client)?;
 
-    let app_clone = app.clone();
-    let login_win_clone = login_win.clone();
+    {
+        let state = app.state::<AppState>();
+        *state.is_logged_in.lock().unwrap() = true;
+        *state.current_api_key.lock().unwrap() = Some(key.clone());
+    }
 
-    let _check_handle = tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let masked = mask_key(&key);
+    let id = format!("key_{}", Local::now().format("%Y%m%d%H%M%S"));
+    let account = SavedAccount {
+        id: id.clone(),
+        label: masked,
+        api_key: key.clone(),
+        last_used: Local::now().format("%Y-%m-%d %H:%M").to_string(),
+    };
 
-            let url = match login_win_clone.url() {
-                Ok(u) => u.to_string(),
-                Err(_) => continue,
-            };
+    let mut accounts = load_accounts();
+    accounts.retain(|a| a.api_key != key);
+    accounts.insert(0, account);
+    if accounts.len() > 5 {
+        accounts.truncate(5);
+    }
+    save_accounts(&accounts);
 
-            if !url.contains("/login") && !url.contains("/signin") {
-                let cookies = match login_win_clone.cookies() {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-
-                if cookies.is_empty() {
-                    continue;
-                }
-
-                {
-                    let state = app_clone.state::<AppState>();
-                    *state.is_logged_in.lock().unwrap() = true;
-                }
-
-                let _ = app_clone.emit("login-successful", ());
-
-                let _app_for_extract = app_clone.clone();
-                let win_for_extract = login_win_clone.clone();
-                let _ = tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    let _ = win_for_extract.eval(SHOW_EXTRACT_OVERLAY_JS);
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    let _ = win_for_extract.eval(EXTRACT_USER_JS);
-                });
-
-                let app_for_close = app_clone.clone();
-                let win_for_close = login_win_clone.clone();
-                let _ = tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-                    let _ = win_for_close.close();
-
-                    let _ = tokio::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        create_data_window(&app_for_close);
-                    });
-                });
-
-                break;
-            }
-        }
-    });
+    let _ = app.emit("login-successful", ());
+    save_and_emit_usage(&app, &usage_data);
 
     Ok(true)
+}
+
+#[tauri::command]
+async fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
+    let accounts = load_accounts();
+    let account = accounts.iter().find(|a| a.id == id).cloned();
+    match account {
+        Some(acc) => {
+            log::info!("[AUTH] logging in with saved key: {}", acc.label);
+
+            let client = app.state::<AppState>().http_client.clone();
+            let usage_data = fetch_usage_from_api(&acc.api_key, &client)?;
+
+            {
+                let state = app.state::<AppState>();
+                *state.is_logged_in.lock().unwrap() = true;
+                *state.current_api_key.lock().unwrap() = Some(acc.api_key.clone());
+            }
+
+            let mut updated = accounts.clone();
+            updated.retain(|a| a.id != id);
+            let updated_acc = SavedAccount {
+                id: acc.id,
+                label: acc.label,
+                api_key: acc.api_key,
+                last_used: Local::now().format("%Y-%m-%d %H:%M").to_string(),
+            };
+            updated.insert(0, updated_acc);
+            save_accounts(&updated);
+
+            let _ = app.emit("login-successful", ());
+            save_and_emit_usage(&app, &usage_data);
+
+            Ok(true)
+        }
+        None => Err("未找到该Key".to_string()),
+    }
 }
 
 #[tauri::command]
@@ -699,11 +437,14 @@ fn refresh_usage_data(app: AppHandle) -> Result<bool, String> {
     let state = app.state::<AppState>();
     let logged_in = *state.is_logged_in.lock().unwrap();
     if !logged_in {
-        return Err("not logged in".to_string());
+        return Err("未登录".to_string());
     }
     drop(state);
 
-    create_data_window(&app);
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        fetch_and_emit_usage(&app_clone);
+    });
     Ok(true)
 }
 
@@ -725,80 +466,15 @@ fn get_card_switch_secs(state: tauri::State<AppState>) -> u64 {
 }
 
 #[tauri::command]
-fn submit_user_info(app: AppHandle, label: String) {
-    if label.is_empty() {
-        log::warn!("[AUTH] user label is empty, skipping save");
-        return;
-    }
-    log::info!("[AUTH] detected user: {}", label);
-
-    let id = format!("acc_{}", Local::now().format("%Y%m%d%H%M%S"));
-    let account = SavedAccount {
-        id: id.clone(),
-        label: label.clone(),
-        last_used: Local::now().format("%Y-%m-%d %H:%M").to_string(),
-    };
-
-    let mut accounts = load_accounts();
-    accounts.retain(|a| a.label != account.label);
-    accounts.insert(0, account);
-    if accounts.len() > 5 {
-        accounts.truncate(5);
-    }
-    save_accounts(&accounts);
-    let _ = app.emit("account-saved", label);
-}
-
-#[tauri::command]
 fn get_saved_accounts() -> Vec<SavedAccount> {
     load_accounts()
 }
 
-fn clear_webview_browsing_data(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        match win.clear_all_browsing_data() {
-            Ok(_) => log::info!("[AUTH] cleared all browsing data"),
-            Err(e) => log::error!("[AUTH] failed to clear browsing data: {}", e),
-        }
-    }
-}
-
 #[tauri::command]
-fn remove_saved_account(app: AppHandle, id: String) {
+fn remove_saved_account(id: String) {
     let mut accounts = load_accounts();
     accounts.retain(|a| a.id != id);
     save_accounts(&accounts);
-    if accounts.is_empty() {
-        clear_webview_browsing_data(&app);
-    }
-}
-
-#[tauri::command]
-async fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
-    let accounts = load_accounts();
-    let account = accounts.iter().find(|a| a.id == id).cloned();
-    match account {
-        Some(acc) => {
-            log::info!("[AUTH] logging in with saved account: {}", acc.label);
-            {
-                let state = app.state::<AppState>();
-                *state.is_logged_in.lock().unwrap() = true;
-            }
-            let mut updated = accounts.clone();
-            updated.retain(|a| a.id != id);
-            let updated_acc = SavedAccount {
-                id: acc.id,
-                label: acc.label,
-                last_used: Local::now().format("%Y-%m-%d %H:%M").to_string(),
-            };
-            updated.insert(0, updated_acc);
-            save_accounts(&updated);
-            let _ = app.emit("login-successful", ());
-            create_data_window(&app);
-            Ok(true)
-        }
-        None => Err("account not found".to_string()),
-    }
 }
 
 #[tauri::command]
@@ -807,13 +483,9 @@ async fn logout(app: AppHandle) -> Result<bool, String> {
     {
         let state = app.state::<AppState>();
         *state.is_logged_in.lock().unwrap() = false;
+        *state.current_api_key.lock().unwrap() = None;
         *state.usage_data.lock().unwrap() = None;
     }
-
-    if let Some(win) = app.get_webview_window("data-scraper") {
-        let _ = win.close();
-    }
-    *app.state::<AppState>().data_window_exists.lock().unwrap() = false;
 
     let _ = app.emit("logged-out", ());
     Ok(true)
@@ -835,7 +507,7 @@ fn start_auto_refresh(app: AppHandle) {
 
             let logged_in = *app.state::<AppState>().is_logged_in.lock().unwrap();
             if logged_in {
-                create_data_window(&app);
+                fetch_and_emit_usage(&app);
             }
         }
     });
@@ -852,10 +524,11 @@ pub fn run() {
         )
         .manage(AppState {
             is_logged_in: Mutex::new(false),
+            current_api_key: Mutex::new(None),
             usage_data: Mutex::new(None),
-            data_window_exists: Mutex::new(false),
             refresh_interval_secs: Mutex::new(180),
             card_switch_secs: Mutex::new(30),
+            http_client: reqwest::blocking::Client::new(),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -870,16 +543,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_login_status,
             get_usage_data,
-            open_login_window,
+            login_with_api_key,
+            login_with_saved_account,
             toggle_always_on_top,
             start_dragging,
             refresh_usage_data,
-            submit_scrape_result,
-            submit_link_result,
-            submit_user_info,
             get_saved_accounts,
             remove_saved_account,
-            login_with_saved_account,
             logout,
             get_refresh_interval,
             set_refresh_interval,

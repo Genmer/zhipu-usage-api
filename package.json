@@ -1,6 +1,6 @@
 {
   "name": "zhipu-usage-monitor",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "智谱AI额度监控桌面悬浮窗应用 (Tauri)",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "lucide-react": "^0.303.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

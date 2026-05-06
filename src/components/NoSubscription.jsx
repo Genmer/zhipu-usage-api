@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Pin, LogOut } from 'lucide-react'
+import { Pin, LogOut, Github } from 'lucide-react'
+import { open } from '@tauri-apps/plugin-shell'
 
 const NoSubscription = ({ isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onLogout }) => {
   const [hoverLogout, setHoverLogout] = useState(false)
@@ -46,8 +47,13 @@ const NoSubscription = ({ isPinned, onTogglePin, isRefreshing, isSuccess, onRefr
         <p className="text-gray-500 text-[10px] text-center">请前往官网订阅后刷新</p>
       </div>
 
-      <div className="flex items-center justify-center pb-3">
+      <div className="flex items-center justify-center pb-3 gap-1.5">
         <span className="text-gray-600 text-[9px]">订阅地址: open.bigmodel.cn</span>
+        <span className="text-gray-600 text-[9px]">·</span>
+        <button onClick={() => open('https://gitee.com/genmers/zhipu-usage-api')}
+                className="no-drag text-gray-500 hover:text-gray-300 transition-colors">
+          <Github size={11} />
+        </button>
       </div>
     </div>
   )

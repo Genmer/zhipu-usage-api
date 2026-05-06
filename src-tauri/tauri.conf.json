@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "智谱额度监控",
-  "version": "2.0.0",
-  "identifier": "com.zhipu.usage-monitor",
+  "version": "3.0.0",
+  "identifier": "com.zhipu.usage-monitor-3.0",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
