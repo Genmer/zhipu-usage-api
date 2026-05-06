@@ -1,0 +1,24 @@
+{
+  "name": "zhipu-usage-monitor",
+  "version": "2.0.0",
+  "description": "智谱AI额度监控桌面悬浮窗应用 (Tauri)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "tauri": "PATH=\"$HOME/.cargo/bin:$PATH\" tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "lucide-react": "^0.303.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "vite": "^7.1.0"
+  }
+}
