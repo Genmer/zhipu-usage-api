@@ -191,17 +191,10 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
                 match dt {
                     Some(dt) => {
                         let now = Local::now();
-                        let diff = dt.signed_duration_since(now);
-                        if diff.num_seconds() > 0 {
-                            let h = diff.num_hours();
-                            let m = (diff.num_seconds() % 3600) / 60;
-                            if h > 0 {
-                                format!("{}小时{}分", h, m)
-                            } else {
-                                format!("{}分", m)
-                            }
+                        if dt.date_naive() == now.date_naive() {
+                            format!("{:02}:{:02}", dt.hour(), dt.minute())
                         } else {
-                            "即将重置".to_string()
+                            format!("{}月{}日 {:02}:{:02}", dt.month(), dt.day(), dt.hour(), dt.minute())
                         }
                     }
                     None => format!("约 {}", fallback),
