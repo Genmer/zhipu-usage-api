@@ -67,7 +67,7 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, 
         </div>
       </div>
       <div className="flex items-center justify-center pb-1.5">
-        <a href="https://gitee.com" target="_blank" rel="noopener noreferrer"
+        <a href="https://gitee.com/genmers/zhipu-usage-webview" target="_blank" rel="noopener noreferrer"
            className="no-drag text-gray-500 hover:text-gray-300 transition-colors"
            onClick={e => e.stopPropagation()}>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">

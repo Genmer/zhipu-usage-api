@@ -85,7 +85,7 @@ const LoginScreen = ({ onLogin }) => {
       <div className="flex items-center justify-center pb-2 gap-1.5">
         <span className="text-gray-300 text-[9px]">v2.0.0</span>
         <span className="text-gray-500 text-[9px]">·</span>
-        <a href="https://gitee.com" target="_blank" rel="noopener noreferrer"
+        <a href="https://gitee.com/genmers/zhipu-usage-webview" target="_blank" rel="noopener noreferrer"
            className="no-drag text-gray-400 hover:text-white transition-colors"
            onClick={e => e.stopPropagation()}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
