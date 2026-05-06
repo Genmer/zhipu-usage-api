@@ -10,6 +10,16 @@ macOS 桌面悬浮窗，实时显示智谱AI Coding Plan的额度使用情况。
 - 🔐 **账号管理** — 记住登录账号，一键切换登录
 - ⚙️ **可配置** — 刷新间隔、卡片切换间隔自定义
 
+## 下载安装
+
+| 平台 | 下载 |
+|---|---|
+| macOS (Apple Silicon) | [GitHub Releases](https://github.com/Genmer/zhipu-usage-api/releases) 下载 `.dmg` |
+| macOS (Intel) | [GitHub Releases](https://github.com/Genmer/zhipu-usage-api/releases) 下载 `.dmg` |
+| Windows | [GitHub Releases](https://github.com/Genmer/zhipu-usage-api/releases) 下载 `.exe` 或 `.msi` |
+
+> Windows 版本（.exe / .msi）请在 [GitHub Releases](https://github.com/Genmer/zhipu-usage-api/releases) 页面下载。
+
 ## 截图
 
 ### 登录页
@@ -46,7 +56,7 @@ npm run tauri build
 
 ## 系统要求
 
-- macOS
+- macOS / Windows
 - Node.js 18+
 - Rust 1.77+
 
