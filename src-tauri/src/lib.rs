@@ -209,22 +209,14 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
         .filter(|l| l.limit_type == "TOKENS_LIMIT")
         .collect();
 
-    let now_ts = Local::now().timestamp_millis() as u64;
-    let future_tokens: Vec<&&ApiLimit> = tokens_limits
+    let hourly_limit = tokens_limits
         .iter()
-        .filter(|l| l.next_reset_time.map_or(false, |t| t > now_ts))
-        .collect();
-
-    let hourly_limit = if future_tokens.len() > 1 {
-        future_tokens
-            .iter()
-            .min_by_key(|l| l.next_reset_time.unwrap_or(u64::MAX))
-            .copied()
-            .or_else(|| tokens_limits.first())
-            .copied()
-    } else {
-        tokens_limits.first().copied()
-    };
+        .find(|l| l.unit == Some(3) && l.number == Some(5))
+        .copied();
+    let weekly_limit = tokens_limits
+        .iter()
+        .find(|l| l.unit == Some(6) && l.number == Some(1))
+        .copied();
 
     let hourly_percentage = match hourly_limit {
         Some(l) => format!("{}%", calc_pct(l).round() as u64),
@@ -235,15 +227,6 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
         None => format!("约 {}", fallback_hourly),
     };
 
-    let weekly_limit = if future_tokens.len() > 1 {
-        future_tokens
-            .iter()
-            .max_by_key(|l| l.next_reset_time.unwrap_or(0))
-            .copied()
-            .copied()
-    } else {
-        None
-    };
     let weekly_percentage = match weekly_limit {
         Some(l) => format!("{}%", calc_pct(l).round() as u64),
         None => "0%".to_string(),
@@ -338,7 +321,7 @@ fn get_usage_data(state: tauri::State<AppState>) -> UsageData {
 }
 
 #[tauri::command]
-async fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
+fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
     let key = api_key.trim().to_string();
     if key.is_empty() {
         return Err("API Key 不能为空".to_string());
@@ -377,7 +360,7 @@ async fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, Str
 }
 
 #[tauri::command]
-async fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
+fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
     let accounts = load_accounts();
     let account = accounts.iter().find(|a| a.id == id).cloned();
     match account {

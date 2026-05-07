@@ -146,7 +146,7 @@ const LoginScreen = () => {
       )}
 
       <div className="flex items-center justify-center pb-2 gap-1.5">
-        <span className="text-gray-300 text-[9px]">v3.0.0</span>
+        <span className="text-gray-300 text-[9px]">v3.1.0</span>
         <span className="text-gray-500 text-[9px]">·</span>
         <button onClick={() => open('https://gitee.com/genmers/zhipu-usage-api')}
                 className="no-drag text-gray-400 hover:text-white transition-colors">
