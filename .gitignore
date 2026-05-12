@@ -4,4 +4,5 @@ src-tauri/target/
 .DS_Store
 *.local
 .trae/
+.qoder/
 openspec/

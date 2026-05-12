@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Window};
+use tauri::tray::TrayIconBuilder;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use chrono::{Local, Timelike, Datelike};
 use std::fs;
 use std::path::PathBuf;
@@ -475,6 +477,18 @@ fn set_card_switch_secs(app: AppHandle, seconds: u64) {
     log::info!("[CONFIG] card switch interval set to {}s", clamped);
 }
 
+#[tauri::command]
+fn hide_window_to_tray(window: Window) {
+    log::info!("[TRAY] hiding window to tray");
+    let _ = window.hide();
+}
+
+#[tauri::command]
+fn quit_app(_app: AppHandle) {
+    log::info!("[TRAY] quitting app");
+    std::process::exit(0);
+}
+
 fn start_auto_refresh(app: AppHandle) {
     std::thread::spawn(move || {
         loop {
@@ -513,6 +527,88 @@ pub fn run() {
                 let _ = window.set_shadow(false);
             }
 
+            // macOS: 设为后台代理程序，Dock 不显示图标，悬浮窗口照常显示
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::ActivationPolicy;
+                let _ = app.handle().set_activation_policy(ActivationPolicy::Accessory);
+            }
+
+            // Windows: 从任务栏隐藏图标，悬浮窗保持显示
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_skip_taskbar(true);
+                }
+            }
+
+            // 创建系统托盘图标
+            let icon_bytes = include_bytes!("../icons/32x32.png");
+            let img = image::load_from_memory(icon_bytes)
+                .expect("Failed to decode tray icon")
+                .into_rgba8();
+            let (width, height) = img.dimensions();
+            let rgba = img.into_raw();
+            let icon = tauri::image::Image::new_owned(rgba, width, height);
+
+            let show_hide_item = MenuItemBuilder::with_id("show_hide", "显示/隐藏窗口")
+                .build(app)
+                .expect("Failed to create show/hide menu item");
+            let quit_item = MenuItemBuilder::with_id("quit", "退出")
+                .build(app)
+                .expect("Failed to create quit menu item");
+            let menu = MenuBuilder::new(app)
+                .item(&show_hide_item)
+                .separator()
+                .item(&quit_item)
+                .build()
+                .expect("Failed to build tray menu");
+
+            let handle_for_tray = handle.clone();
+            let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(icon)
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show_hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                    log::info!("[TRAY] window hidden");
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                    log::info!("[TRAY] window shown");
+                                }
+                            }
+                        }
+                        "quit" => {
+                            log::info!("[TRAY] quitting from tray menu");
+                            std::process::exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(move |_tray, event| {
+                    use tauri::tray::MouseButton;
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
+                        if let Some(window) = handle_for_tray.get_webview_window("main") {
+                            if window.is_visible().unwrap_or(false) {
+                                let _ = window.hide();
+                            } else {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)
+                .expect("Failed to build tray icon");
+
             start_auto_refresh(handle);
             Ok(())
         })
@@ -531,7 +627,17 @@ pub fn run() {
             set_refresh_interval,
             get_card_switch_secs,
             set_card_switch_secs,
+            hide_window_to_tray,
+            quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            // 拦截系统退出请求（Dock右键退出/Cmd+Q/Alt+F4等），
+            // 只有通过托盘菜单或卡片「完全退出」才能退出程序
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                log::info!("[TRAY] preventing system exit, use tray menu to quit");
+                api.prevent_exit();
+            }
+        });
 }
