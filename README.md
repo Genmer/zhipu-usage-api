@@ -1,5 +1,8 @@
 # 智谱AI 额度监控
 
+![输入图片说明](image.png)
+![输入图片说明](image2.png)
+
 macOS 桌面悬浮窗，实时显示智谱AI Coding Plan的额度使用情况。
 
 ## 功能
