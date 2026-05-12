@@ -1,5 +1,7 @@
 # 智谱AI 额度监控
 
+官方查询API 输入API-KEY查询
+
 ![输入图片说明](image.png)
 ![输入图片说明](image2.png)
 
