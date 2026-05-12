@@ -1,11 +1,23 @@
 import React, { useState } from 'react'
-import { Pin, Settings, LogOut, Github } from 'lucide-react'
+import { Pin, Settings, LogOut, Github, X } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-shell'
+import { invoke } from '@tauri-apps/api/core'
 
 const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, onPrev, isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onOpenSettings, onLogout }) => {
   const numVal = parseInt(percentage) || 0
   const barColor = numVal > 80 ? '#ef4444' : numVal > 60 ? '#f59e0b' : '#3b82f6'
   const [hoverLogout, setHoverLogout] = useState(false)
+  const [showCloseMenu, setShowCloseMenu] = useState(false)
+
+  const handleBackgroundRun = () => {
+    setShowCloseMenu(false)
+    // Dock 图标已通过 ActivationPolicy::Accessory 隐藏，悬浮窗正常显示
+  }
+
+  const handleQuit = () => {
+    setShowCloseMenu(false)
+    invoke('quit_app')
+  }
 
   return (
     <div className="drag-region w-64 h-52 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
@@ -59,7 +71,7 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, 
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-5 pb-3">
+      <div className="flex items-center justify-between px-5 pb-3 relative">
         <span className="text-white text-[10px] font-bold">重置: {resetTime}</span>
         <div className="flex gap-1 items-center">
           <button onClick={onPrev} className="no-drag w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
@@ -68,7 +80,20 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, 
           <button onClick={onNext} className="no-drag w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
           </button>
+          <button onClick={() => setShowCloseMenu(!showCloseMenu)} className="no-drag w-5 h-5 rounded-full flex items-center justify-center hover:bg-red-500/20 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <X size={10} className="text-gray-400" />
+          </button>
         </div>
+        {showCloseMenu && (
+          <div className="absolute bottom-8 right-0 bg-gray-800/95 rounded-lg shadow-lg py-1 flex flex-col z-50 border border-white/5" style={{ minWidth: '72px' }}>
+            <button onClick={handleBackgroundRun} className="no-drag text-[10px] text-gray-300 hover:bg-white/10 px-2.5 py-1.5 rounded-t-lg text-left whitespace-nowrap transition-colors no-select">
+              后台运行
+            </button>
+            <button onClick={handleQuit} className="no-drag text-[10px] text-red-400 hover:bg-red-500/10 px-2.5 py-1.5 rounded-b-lg text-left whitespace-nowrap transition-colors no-select">
+              完全退出
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )
