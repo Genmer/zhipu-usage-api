@@ -2,6 +2,22 @@
 
 官方查询API 输入API-KEY查询
 
+## 更新公告 / Changelog
+
+### 2026-05-27 v3.2.1
+
+- 新增卡片右下角圆形进度条，显示另一张卡片的额度百分比 / Added circular progress indicator showing the other card's quota percentage
+- 添加系统托盘支持，隐藏 Dock/任务栏图标 / Added system tray support, hidden from Dock/taskbar
+- 卡片切换支持禁用（设置中勾选"不自动切换卡片"）/ Added option to disable auto card switching
+- reqwest 切换到 rustls-tls，移除 openssl 依赖 / Switched to rustls-tls, removed openssl dependency
+- 登录改为异步调用，避免界面卡顿 / Login changed to async to prevent UI freezing
+- 版本号自动同步脚本 / Added version sync script
+
+### 2026-05-07 v3.1.0
+
+- 修复每周额度显示 0% 的问题 / Fixed weekly quota showing 0%
+- 修复登录时 tokio panic 的问题 / Fixed tokio panic on login
+
 ![输入图片说明](image.png)
 ![输入图片说明](image2.png)
 
