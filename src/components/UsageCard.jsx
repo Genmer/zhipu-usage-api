@@ -3,7 +3,28 @@ import { Pin, Settings, LogOut, Github, X } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-shell'
 import { invoke } from '@tauri-apps/api/core'
 
-const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, onPrev, isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onOpenSettings, onLogout }) => {
+const RADIUS = 18
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS
+
+const CircularProgress = ({ percentage }) => {
+  const numVal = parseInt(percentage) || 0
+  const color = numVal > 80 ? '#ef4444' : numVal > 60 ? '#f59e0b' : '#3b82f6'
+  const offset = CIRCUMFERENCE * (1 - numVal / 100)
+
+  return (
+    <svg width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+      <circle cx="24" cy="24" r={RADIUS} fill="none" stroke={color} strokeWidth="4"
+        strokeDasharray={CIRCUMFERENCE} strokeDashoffset={offset} strokeLinecap="round"
+        transform="rotate(-90 24 24)"
+        style={{ transition: 'stroke-dashoffset 0.7s ease-out, stroke 0.3s' }} />
+      <text x="24" y="24.5" textAnchor="middle" dominantBaseline="central"
+        fill="white" fontSize="12" fontWeight="bold">{numVal}%</text>
+    </svg>
+  )
+}
+
+const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPercentage, otherTitle, onNext, onPrev, isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onOpenSettings, onLogout }) => {
   const numVal = parseInt(percentage) || 0
   const barColor = numVal > 80 ? '#ef4444' : numVal > 60 ? '#f59e0b' : '#3b82f6'
   const [hoverLogout, setHoverLogout] = useState(false)
@@ -63,6 +84,12 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, 
       <div className="flex-1 flex flex-col items-center justify-center -mt-2">
         <span className="text-white text-5xl font-bold tracking-tight">{percentage}</span>
       </div>
+      {otherPercentage && (
+        <div className="absolute no-drag cursor-default"
+          style={{ right: '18px', top: '88px' }}>
+          <CircularProgress percentage={otherPercentage} />
+        </div>
+      )}
 
       <div className="px-5 mb-3">
         <div className="w-full h-1.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
@@ -73,7 +100,7 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, onNext, 
 
       <div className="flex items-center justify-between px-5 pb-3 relative">
         <span className="text-white text-[10px] font-bold">重置: {resetTime}</span>
-        <div className="flex gap-1 items-center">
+        <div className="flex gap-1.5 items-center">
           <button onClick={onPrev} className="no-drag w-5 h-5 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
             <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
           </button>

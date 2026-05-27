@@ -99,14 +99,19 @@ function App() {
   const switchTimerRef = useRef(null)
   useEffect(() => {
     if (switchTimerRef.current) clearInterval(switchTimerRef.current)
-    switchTimerRef.current = setInterval(() => { if (!isAnimating) nextCard() }, cardSwitchSeconds * 1000)
+    if (cardSwitchSeconds > 0) {
+      switchTimerRef.current = setInterval(() => { if (!isAnimating) nextCard() }, cardSwitchSeconds * 1000)
+    }
     return () => clearInterval(switchTimerRef.current)
   }, [isAnimating, nextCard, cardSwitchSeconds])
 
   return (
     <div className="no-select" style={{ background: 'transparent' }} onMouseDown={handleDragStart}>
       {isLoggedIn ? (
-        <UsageCard {...usageData[currentCard]} onNext={nextCard} onPrev={prevCard}
+        <UsageCard {...usageData[currentCard]}
+          otherPercentage={usageData[(currentCard + 1) % 2].percentage}
+          otherTitle={usageData[(currentCard + 1) % 2].title}
+          onNext={nextCard} onPrev={prevCard}
           isPinned={isPinned} onTogglePin={handleTogglePin}
           isRefreshing={isRefreshing} isSuccess={isSuccess} onRefresh={handleRefresh}
           onOpenSettings={() => setShowSettings(true)} onLogout={handleLogout} />
