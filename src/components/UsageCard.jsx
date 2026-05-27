@@ -5,7 +5,6 @@ import { invoke } from '@tauri-apps/api/core'
 
 const GITEE_URL = 'https://gitee.com/genmers/zhipu-usage-api'
 const GITHUB_URL = 'https://github.com/Genmer/zhipu-usage-api'
-const GITHUB_API = 'https://api.github.com/repos/Genmer/zhipu-usage-api/releases/latest'
 
 const RADIUS = 18
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -38,10 +37,7 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPer
   const githubTimer = useRef(null)
 
   useEffect(() => {
-    fetch(GITHUB_API)
-      .then(r => r.json())
-      .then(d => setLatestVersion(d.tag_name?.replace(/^v/, '') || null))
-      .catch(() => {})
+    invoke('get_latest_version').then(v => setLatestVersion(v)).catch(() => {})
   }, [])
 
   const handleBackgroundRun = () => {

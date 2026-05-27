@@ -495,6 +495,24 @@ fn quit_app(_app: AppHandle) {
     std::process::exit(0);
 }
 
+#[tauri::command]
+fn get_latest_version(state: tauri::State<AppState>) -> Option<String> {
+    let resp = state.http_client
+        .get("https://api.github.com/repos/Genmer/zhipu-usage-api/releases/latest")
+        .header("User-Agent", "zhipu-usage-monitor")
+        .timeout(std::time::Duration::from_secs(5))
+        .send();
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            let json: serde_json::Value = r.json().unwrap_or_default();
+            json.get("tag_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim_start_matches('v').to_string())
+        }
+        _ => None,
+    }
+}
+
 fn start_auto_refresh(app: AppHandle) {
     std::thread::spawn(move || {
         loop {
@@ -635,6 +653,7 @@ pub fn run() {
             set_card_switch_secs,
             hide_window_to_tray,
             quit_app,
+            get_latest_version,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
