@@ -4,6 +4,12 @@
 
 ## 更新公告 / Changelog
 
+### 2026-05-27 v1.0.5
+
+- GitHub 图标 hover 弹出菜单，支持跳转 GitHub/Gitee 仓库 / GitHub icon hover menu with GitHub/Gitee links
+- 显示当前版本与 GitHub 最新 Release 版本对比 / Shows current version vs latest GitHub Release
+- 圆形进度条位置微调 / Adjusted circular progress indicator position
+
 ### 2026-05-27 v3.2.1
 
 - 新增卡片右下角圆形进度条，显示另一张卡片的额度百分比 / Added circular progress indicator showing the other card's quota percentage

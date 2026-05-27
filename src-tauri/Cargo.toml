@@ -1,6 +1,6 @@
 [package]
 name = "zhipu-usage-monitor"
-version = "3.2.1"
+version = "1.0.5"
 description = "智谱AI额度监控桌面悬浮窗应用"
 authors = ["you"]
 license = ""

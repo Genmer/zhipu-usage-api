@@ -1,7 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Pin, Settings, LogOut, Github, X } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-shell'
 import { invoke } from '@tauri-apps/api/core'
+
+const GITEE_URL = 'https://gitee.com/genmers/zhipu-usage-api'
+const GITHUB_URL = 'https://github.com/Genmer/zhipu-usage-api'
+const GITHUB_API = 'https://api.github.com/repos/Genmer/zhipu-usage-api/releases/latest'
 
 const RADIUS = 18
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
@@ -29,6 +33,16 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPer
   const barColor = numVal > 80 ? '#ef4444' : numVal > 60 ? '#f59e0b' : '#3b82f6'
   const [hoverLogout, setHoverLogout] = useState(false)
   const [showCloseMenu, setShowCloseMenu] = useState(false)
+  const [hoverGithub, setHoverGithub] = useState(false)
+  const [latestVersion, setLatestVersion] = useState(null)
+  const githubTimer = useRef(null)
+
+  useEffect(() => {
+    fetch(GITHUB_API)
+      .then(r => r.json())
+      .then(d => setLatestVersion(d.tag_name?.replace(/^v/, '') || null))
+      .catch(() => {})
+  }, [])
 
   const handleBackgroundRun = () => {
     setShowCloseMenu(false)
@@ -47,9 +61,39 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPer
         <button onClick={onTogglePin} className="no-drag absolute left-3 top-3 w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
           <Pin size={14} style={{ color: isPinned ? '#3b82f6' : '#6b7280', transform: isPinned ? 'rotate(45deg)' : 'rotate(0deg)', transition: 'all 0.2s' }} fill={isPinned ? '#3b82f6' : 'none'} />
         </button>
-        <button onClick={() => open('https://gitee.com/genmers/zhipu-usage-api')} className="no-drag absolute left-3 top-[36px] w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
-          <Github size={12} className="text-gray-400" />
-        </button>
+        <div className="no-drag absolute left-3 top-[36px]"
+          onMouseEnter={() => { clearTimeout(githubTimer.current); setHoverGithub(true) }}
+          onMouseLeave={() => { githubTimer.current = setTimeout(() => setHoverGithub(false), 200) }}>
+          <button className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/10 transition-colors no-select" style={{ backgroundColor: hoverGithub ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.06)' }}>
+            <Github size={12} className="text-gray-400" />
+          </button>
+          {hoverGithub && (
+            <div className="absolute left-0 top-7 bg-gray-800/95 rounded-lg shadow-lg py-1.5 z-50 border border-white/5" style={{ minWidth: '160px' }}
+              onMouseEnter={() => { clearTimeout(githubTimer.current); setHoverGithub(true) }}
+              onMouseLeave={() => { githubTimer.current = setTimeout(() => setHoverGithub(false), 200) }}>
+              <button onClick={() => open(GITHUB_URL)} className="no-drag w-full text-[10px] text-gray-300 hover:bg-white/10 px-3 py-1.5 text-left whitespace-nowrap transition-colors no-select flex items-center gap-2">
+                <Github size={10} /> GitHub
+                <span className="text-[8px] text-blue-400 ml-auto">安装包</span>
+              </button>
+              <button onClick={() => open(GITEE_URL)} className="no-drag w-full text-[10px] text-gray-300 hover:bg-white/10 px-3 py-1.5 text-left whitespace-nowrap transition-colors no-select flex items-center gap-2">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M11.984 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.016 0zm6.09 5.333c.328 0 .593.266.593.593v1.687a3.953 3.953 0 0 1 1.856 1.376l1.19-.685a.593.593 0 1 1 .592 1.027l-1.19.685a3.959 3.959 0 0 1 0 2.752l1.19.685a.593.593 0 1 1-.592 1.027l-1.19-.685a3.953 3.953 0 0 1-1.856 1.376v1.687a.593.593 0 1 1-1.186 0v-1.687a3.953 3.953 0 0 1-1.856-1.376l-1.19.685a.593.593 0 1 1-.592-1.027l1.19-.685a3.959 3.959 0 0 1 0-2.752l-1.19-.685a.593.593 0 1 1 .592-1.027l1.19.685a3.953 3.953 0 0 1 1.856-1.376V5.926c0-.327.266-.593.593-.593z"/></svg>
+                Gitee
+              </button>
+              <div className="border-t border-white/5 mt-1 pt-1 px-3 pb-1">
+                <div className="text-[9px] text-gray-500">当前 v{__APP_VERSION__}</div>
+                {latestVersion && (
+                  <div className="text-[9px] mt-0.5">
+                    {latestVersion !== __APP_VERSION__ ? (
+                      <span className="text-yellow-400">最新 v{latestVersion} ↑</span>
+                    ) : (
+                      <span className="text-green-400">已是最新</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <span className="text-white text-xs font-bold tracking-wide">{title}</span>
         <button onClick={onRefresh} disabled={isRefreshing} className="no-drag absolute right-3 top-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 no-select disabled:opacity-40 hover:bg-white/10" style={{ backgroundColor: isSuccess ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.06)' }}>
           {isRefreshing ? (
@@ -86,7 +130,7 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPer
       </div>
       {otherPercentage && (
         <div className="absolute no-drag cursor-default"
-          style={{ right: '18px', top: '88px' }}>
+          style={{ right: '18px', top: '100px' }}>
           <CircularProgress percentage={otherPercentage} />
         </div>
       )}
