@@ -38,6 +38,41 @@ fn save_accounts(accounts: &[SavedAccount]) {
     let _ = fs::write(accounts_path(), serde_json::to_string_pretty(accounts).unwrap_or_default());
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppSettings {
+    refresh_interval_secs: u64,
+    card_switch_secs: u64,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self { refresh_interval_secs: 180, card_switch_secs: 30 }
+    }
+}
+
+fn settings_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join(".zhipu-monitor").join("settings.json")
+}
+
+fn load_settings() -> AppSettings {
+    let path = settings_path();
+    if !path.exists() {
+        return AppSettings::default();
+    }
+    match fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => AppSettings::default(),
+    }
+}
+
+fn save_settings(settings: &AppSettings) {
+    if let Some(parent) = settings_path().parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(settings_path(), serde_json::to_string_pretty(settings).unwrap_or_default());
+}
+
 fn mask_key(key: &str) -> String {
     if key.len() <= 8 {
         return key.to_string();
@@ -441,6 +476,10 @@ fn get_refresh_interval(state: tauri::State<AppState>) -> u64 {
 fn set_refresh_interval(app: AppHandle, seconds: u64) {
     let clamped = seconds.clamp(30, 3600);
     *app.state::<AppState>().refresh_interval_secs.lock().unwrap() = clamped;
+    save_settings(&AppSettings {
+        refresh_interval_secs: clamped,
+        card_switch_secs: *app.state::<AppState>().card_switch_secs.lock().unwrap(),
+    });
     log::info!("[CONFIG] refresh interval set to {}s", clamped);
 }
 
@@ -479,6 +518,10 @@ async fn logout(app: AppHandle) -> Result<bool, String> {
 fn set_card_switch_secs(app: AppHandle, seconds: u64) {
     let clamped = if seconds == 0 { 0 } else { seconds.clamp(5, 300) };
     *app.state::<AppState>().card_switch_secs.lock().unwrap() = clamped;
+    save_settings(&AppSettings {
+        refresh_interval_secs: *app.state::<AppState>().refresh_interval_secs.lock().unwrap(),
+        card_switch_secs: clamped,
+    });
     let _ = app.emit("card-switch-interval-changed", clamped);
     log::info!("[CONFIG] card switch interval set to {}s", clamped);
 }
@@ -536,13 +579,17 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
-        .manage(AppState {
-            is_logged_in: Mutex::new(false),
-            current_api_key: Mutex::new(None),
-            usage_data: Mutex::new(None),
-            refresh_interval_secs: Mutex::new(180),
-            card_switch_secs: Mutex::new(30),
-            http_client: reqwest::blocking::Client::new(),
+        .manage({
+            let settings = load_settings();
+            log::info!("[CONFIG] loaded settings: refresh={}s card_switch={}s", settings.refresh_interval_secs, settings.card_switch_secs);
+            AppState {
+                is_logged_in: Mutex::new(false),
+                current_api_key: Mutex::new(None),
+                usage_data: Mutex::new(None),
+                refresh_interval_secs: Mutex::new(settings.refresh_interval_secs),
+                card_switch_secs: Mutex::new(settings.card_switch_secs),
+                http_client: reqwest::blocking::Client::new(),
+            }
         })
         .setup(|app| {
             let handle = app.handle().clone();

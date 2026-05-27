@@ -4,6 +4,11 @@
 
 ## 更新公告 / Changelog
 
+### 2026-05-27 v3.2.3
+
+- 设置持久化：刷新间隔、卡片切换间隔重启后保留 / Settings persistence: refresh & card switch intervals survive restarts
+- 版本检查改用 Rust 后端请求，解决打包后 CORS 问题 / Version check via Rust backend, fixed CORS in production build
+
 ### 2026-05-27 v3.2.2
 
 - GitHub 图标 hover 弹出菜单，支持跳转 GitHub/Gitee 仓库 / GitHub icon hover menu with GitHub/Gitee links
