@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "智谱额度监控",
-  "version": "3.1.0",
+  "version": "1.0.4",
   "identifier": "com.zhipu.usage-monitor-3.1",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,7 +31,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "app"],
+    "targets": [
+      "nsis",
+      "dmg",
+      "app"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

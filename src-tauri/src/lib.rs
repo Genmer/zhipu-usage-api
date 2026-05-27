@@ -323,14 +323,17 @@ fn get_usage_data(state: tauri::State<AppState>) -> UsageData {
 }
 
 #[tauri::command]
-fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
+async fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
     let key = api_key.trim().to_string();
     if key.is_empty() {
         return Err("API Key 不能为空".to_string());
     }
 
     let client = app.state::<AppState>().http_client.clone();
-    let usage_data = fetch_usage_from_api(&key, &client)?;
+    let key_clone = key.clone();
+    let usage_data = tokio::task::spawn_blocking(move || {
+        fetch_usage_from_api(&key_clone, &client)
+    }).await.map_err(|e| format!("任务执行失败: {}", e))??;
 
     {
         let state = app.state::<AppState>();
@@ -362,7 +365,7 @@ fn login_with_api_key(app: AppHandle, api_key: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
+async fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> {
     let accounts = load_accounts();
     let account = accounts.iter().find(|a| a.id == id).cloned();
     match account {
@@ -370,7 +373,10 @@ fn login_with_saved_account(app: AppHandle, id: String) -> Result<bool, String> 
             log::info!("[AUTH] logging in with saved key: {}", acc.label);
 
             let client = app.state::<AppState>().http_client.clone();
-            let usage_data = fetch_usage_from_api(&acc.api_key, &client)?;
+            let api_key = acc.api_key.clone();
+            let usage_data = tokio::task::spawn_blocking(move || {
+                fetch_usage_from_api(&api_key, &client)
+            }).await.map_err(|e| format!("任务执行失败: {}", e))??;
 
             {
                 let state = app.state::<AppState>();
@@ -471,7 +477,7 @@ async fn logout(app: AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 fn set_card_switch_secs(app: AppHandle, seconds: u64) {
-    let clamped = seconds.clamp(5, 300);
+    let clamped = if seconds == 0 { 0 } else { seconds.clamp(5, 300) };
     *app.state::<AppState>().card_switch_secs.lock().unwrap() = clamped;
     let _ = app.emit("card-switch-interval-changed", clamped);
     log::info!("[CONFIG] card switch interval set to {}s", clamped);

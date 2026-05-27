@@ -1,10 +1,11 @@
 {
   "name": "zhipu-usage-monitor",
-  "version": "3.1.0",
+  "version": "1.0.4",
   "description": "智谱AI额度监控桌面悬浮窗应用 (Tauri)",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "sync-version": "node scripts/sync-version.mjs",
+    "dev": "node scripts/sync-version.mjs && vite",
+    "build": "node scripts/sync-version.mjs && vite build",
     "tauri": "tauri"
   },
   "dependencies": {

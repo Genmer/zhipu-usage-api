@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
 import { Trash2, Eye, EyeOff, Github } from 'lucide-react'
 import { open } from '@tauri-apps/plugin-shell'
 
@@ -10,9 +11,11 @@ const LoginScreen = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showInput, setShowInput] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
 
   useEffect(() => {
     invoke('get_saved_accounts').then(setAccounts).catch(() => {})
+    getVersion().then(v => setAppVersion(v)).catch(() => {})
   }, [])
 
   const handleRemove = async (id, e) => {
@@ -64,6 +67,9 @@ const LoginScreen = () => {
 
       {!showInput ? (
         <div className="flex-1 flex flex-col px-3 overflow-hidden">
+          {error && (
+            <p className="text-red-400 text-[9px] mb-1 px-1">{error}</p>
+          )}
           {accounts.length > 0 && (
             <>
               <span className="text-gray-300 text-[9px] mb-1 px-1 font-medium">已记住的Key</span>
@@ -146,7 +152,7 @@ const LoginScreen = () => {
       )}
 
       <div className="flex items-center justify-center pb-2 gap-1.5">
-        <span className="text-gray-300 text-[9px]">v3.1.0</span>
+        <span className="text-gray-300 text-[9px]">v{appVersion}</span>
         <span className="text-gray-500 text-[9px]">·</span>
         <button onClick={() => open('https://gitee.com/genmers/zhipu-usage-api')}
                 className="no-drag text-gray-400 hover:text-white transition-colors">

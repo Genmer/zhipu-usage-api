@@ -4,18 +4,26 @@ import { X } from 'lucide-react'
 
 const SettingsDialog = ({ open, onClose }) => {
   const [refreshMinutes, setRefreshMinutes] = useState('3')
+  const [cardSwitchDisabled, setCardSwitchDisabled] = useState(false)
   const [cardSwitchSeconds, setCardSwitchSeconds] = useState('30')
 
   useEffect(() => {
     if (open) {
       invoke('get_refresh_interval').then(v => setRefreshMinutes(String(Math.round(v / 60))))
-      invoke('get_card_switch_secs').then(v => setCardSwitchSeconds(String(v)))
+      invoke('get_card_switch_secs').then(v => {
+        if (v === 0) {
+          setCardSwitchDisabled(true)
+        } else {
+          setCardSwitchDisabled(false)
+          setCardSwitchSeconds(String(v))
+        }
+      })
     }
   }, [open])
 
   const handleSave = async () => {
     const mins = Math.max(0.5, parseFloat(refreshMinutes) || 3)
-    const secs = Math.max(5, parseInt(cardSwitchSeconds) || 30)
+    const secs = cardSwitchDisabled ? 0 : Math.max(5, parseInt(cardSwitchSeconds) || 30)
     await invoke('set_refresh_interval', { seconds: Math.round(mins * 60) })
     await invoke('set_card_switch_secs', { seconds: secs })
     onClose()
@@ -53,11 +61,21 @@ const SettingsDialog = ({ open, onClose }) => {
             type="number"
             min="5"
             step="1"
+            disabled={cardSwitchDisabled}
             value={cardSwitchSeconds}
             onChange={e => setCardSwitchSeconds(e.target.value)}
-            className="w-full h-6 rounded-md px-2 text-white text-[11px] outline-none border border-white/10 focus:border-blue-500 transition-colors"
-            style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+            className="w-full h-6 rounded-md px-2 text-[11px] outline-none border border-white/10 focus:border-blue-500 transition-colors disabled:opacity-30"
+            style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: cardSwitchDisabled ? 'rgba(255,255,255,0.3)' : 'white' }}
           />
+          <label className="flex items-center gap-1.5 mt-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={cardSwitchDisabled}
+              onChange={e => setCardSwitchDisabled(e.target.checked)}
+              className="w-3 h-3 accent-blue-500"
+            />
+            <span className="text-gray-400 text-[9px]">不自动切换卡片</span>
+          </label>
         </div>
       </div>
 
