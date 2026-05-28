@@ -4,6 +4,10 @@
 
 ## 更新公告 / Changelog
 
+### 2026-05-28 v3.2.4
+
+- 显示套餐类型标签（LITE绿/PRO蓝/MAX红）/ Show plan badge (LITE green / PRO blue / MAX red)
+
 ### 2026-05-27 v3.2.3
 
 - 设置持久化：刷新间隔、卡片切换间隔重启后保留 / Settings persistence: refresh & card switch intervals survive restarts

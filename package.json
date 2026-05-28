@@ -1,6 +1,6 @@
 {
   "name": "zhipu-usage-monitor",
-  "version": "3.2.3",
+  "version": "3.2.4",
   "description": "智谱AI额度监控桌面悬浮窗应用 (Tauri)",
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",

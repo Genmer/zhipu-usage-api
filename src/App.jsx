@@ -15,8 +15,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [cardSwitchSeconds, setCardSwitchSeconds] = useState(30)
   const [usageData, setUsageData] = useState([
-    { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false },
-    { title: "每周额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false }
+    { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false, level: null },
+    { title: "每周额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false, level: null }
   ])
 
   const handleDragStart = useCallback((e) => {
@@ -51,8 +51,8 @@ function App() {
     listen('logged-out', () => {
       setIsLoggedIn(false)
       setUsageData([
-        { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false },
-        { title: "每周额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false }
+        { title: "每5小时额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false, level: null },
+        { title: "每周额度", percentage: "0%", resetTime: "加载中...", isHighUsage: false, level: null }
       ])
     })
     listen('card-switch-interval-changed', (e) => {
@@ -65,8 +65,8 @@ function App() {
   }, [])
 
   const normalize = (data) => [
-    { title: "每5小时额度", percentage: data.hourly.percentage, resetTime: data.hourly.resetTime, isHighUsage: parseInt(data.hourly.percentage) > 80 },
-    { title: "每周额度", percentage: data.weekly.percentage, resetTime: data.weekly.resetTime, isHighUsage: parseInt(data.weekly.percentage) > 80 }
+    { title: "每5小时额度", percentage: data.hourly.percentage, resetTime: data.hourly.resetTime, isHighUsage: parseInt(data.hourly.percentage) > 80, level: data.level },
+    { title: "每周额度", percentage: data.weekly.percentage, resetTime: data.weekly.resetTime, isHighUsage: parseInt(data.weekly.percentage) > 80, level: data.level }
   ]
 
   const handleLogout = useCallback(() => {

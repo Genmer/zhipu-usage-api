@@ -27,7 +27,9 @@ const CircularProgress = ({ percentage }) => {
   )
 }
 
-const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPercentage, otherTitle, onNext, onPrev, isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onOpenSettings, onLogout }) => {
+const LEVEL_COLORS = { LITE: '#22c55e', PRO: '#3b82f6', MAX: '#ef4444' }
+
+const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPercentage, otherTitle, onNext, onPrev, isPinned, onTogglePin, isRefreshing, isSuccess, onRefresh, onOpenSettings, onLogout, level }) => {
   const numVal = parseInt(percentage) || 0
   const barColor = numVal > 80 ? '#ef4444' : numVal > 60 ? '#f59e0b' : '#3b82f6'
   const [hoverLogout, setHoverLogout] = useState(false)
@@ -91,6 +93,12 @@ const UsageCard = ({ title, percentage, resetTime, isHighUsage = false, otherPer
           )}
         </div>
         <span className="text-white text-xs font-bold tracking-wide">{title}</span>
+        {level && (
+          <span className="absolute left-1/2 -translate-x-1/2 top-[38px] text-[8px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ color: LEVEL_COLORS[level] || '#9ca3af', backgroundColor: `${LEVEL_COLORS[level] || '#9ca3af'}15`, border: `1px solid ${LEVEL_COLORS[level] || '#9ca3af'}30` }}>
+            {level}
+          </span>
+        )}
         <button onClick={onRefresh} disabled={isRefreshing} className="no-drag absolute right-3 top-3 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 no-select disabled:opacity-40 hover:bg-white/10" style={{ backgroundColor: isSuccess ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255,255,255,0.06)' }}>
           {isRefreshing ? (
             <div className="w-3 h-3 border-[1.5px] border-gray-500 border-t-blue-400 rounded-full animate-spin" />

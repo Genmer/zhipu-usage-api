@@ -85,6 +85,7 @@ struct UsageData {
     hourly: QuotaInfo,
     weekly: QuotaInfo,
     timestamp: String,
+    level: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,9 +156,10 @@ struct ApiLimit {
     next_reset_time: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ApiData {
     limits: Option<Vec<ApiLimit>>,
+    level: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,10 +195,9 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
         return Err(api_resp.msg.unwrap_or_else(|| "未知错误".to_string()));
     }
 
-    let limits = api_resp
-        .data
-        .and_then(|d| d.limits)
-        .unwrap_or_default();
+    let api_data = api_resp.data.unwrap_or_default();
+    let level = api_data.level;
+    let limits = api_data.limits.unwrap_or_default();
 
     for (i, limit) in limits.iter().enumerate() {
         log::info!(
@@ -278,6 +279,8 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
         hourly_percentage, hourly_reset, weekly_percentage, weekly_reset
     );
 
+    log::info!("[API] level={:?}", level);
+
     Ok(UsageData {
         hourly: QuotaInfo {
             percentage: hourly_percentage,
@@ -288,6 +291,7 @@ fn fetch_usage_from_api(api_key: &str, client: &reqwest::blocking::Client) -> Re
             reset_time: weekly_reset,
         },
         timestamp: Local::now().to_rfc3339(),
+        level: level.map(|s| s.to_uppercase()),
     })
 }
 
@@ -354,6 +358,7 @@ fn get_usage_data(state: tauri::State<AppState>) -> UsageData {
                 reset_time: "加载中...".to_string(),
             },
             timestamp: Local::now().to_rfc3339(),
+            level: None,
         })
 }
 
