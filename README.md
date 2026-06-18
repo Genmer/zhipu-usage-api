@@ -1,6 +1,12 @@
 # 智谱AI 额度监控
 
 官方查询API 输入API-KEY查询
+最新版本 
+<img width="256" height="208" alt="image" src="https://github.com/user-attachments/assets/aa3233f3-9404-4c7d-86e0-6b5155933b40" />
+<img width="926" height="811" alt="image" src="https://github.com/user-attachments/assets/c1e02993-b6a7-4068-82ff-9e9d65a860eb" />
+
+
+
 
 ## 更新公告 / Changelog
 
